@@ -192,6 +192,38 @@ input[type=text]::placeholder{color:var(--pk3);opacity:.6}
   font-family:'VT323',monospace;
 }
 
+/* zoom controls */
+.zoom-row{display:flex;align-items:center;gap:7px;margin-top:8px}
+.zoom-label{font-family:'VT323',monospace;font-size:10px;color:var(--muted);letter-spacing:.08em;flex-shrink:0}
+input[type=range]{
+  flex:1;-webkit-appearance:none;appearance:none;
+  height:3px;background:var(--border);outline:none;
+  border-radius:2px;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:12px;height:12px;border-radius:50%;
+  background:var(--pk4);border:2px solid #fff;
+  box-shadow:0 0 0 1.5px var(--pk3);cursor:pointer;
+}
+input[type=range]::-webkit-slider-runnable-track{
+  background:linear-gradient(90deg,var(--pk3) var(--pct,50%),var(--border) var(--pct,50%));
+  height:3px;border-radius:2px;
+}
+.btn-reset{
+  flex-shrink:0;width:22px;height:22px;
+  border:1px solid var(--border);background:#fff;
+  color:var(--muted);font-size:9px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:50%;transition:all .12s;
+  font-family:'VT323',monospace;letter-spacing:0;
+}
+.btn-reset:hover{border-color:var(--pk3);color:var(--pk4);background:var(--pk0)}
+.img-hint{
+  font-family:'VT323',monospace;font-size:10px;color:var(--muted);
+  text-align:center;letter-spacing:.06em;margin-top:5px;opacity:.7;
+}
+
 /* download */
 .btn-dl{
   width:100%;padding:10px 0;
@@ -286,6 +318,12 @@ input[type=text]::placeholder{color:var(--pk3);opacity:.6}
       <div class="up-txt">PNG · WEBP</div>
       <img id="imgThumb" alt="">
     </div>
+    <div class="zoom-row">
+      <span class="zoom-label">ZOOM</span>
+      <input type="range" id="zoomSlider" min="20" max="300" value="100">
+      <button class="btn-reset" id="resetBtn">R</button>
+    </div>
+    <div class="img-hint">drag · scroll to zoom</div>
   </div>
 
   <div class="panel">
@@ -352,7 +390,7 @@ input[type=text]::placeholder{color:var(--pk3);opacity:.6}
 </div>
 
 <script>
-const S={mainName:'',subName:'',series:'',c1:'#FFE0F2',c2:'#FFFFFF',ca:'#FF85BB',dir:'diagonal',img:null};
+const S={mainName:'',subName:'',series:'',c1:'#FFE0F2',c2:'#FFFFFF',ca:'#FF85BB',dir:'diagonal',img:null,imgX:0,imgY:0,imgScale:1};
 const CV=document.getElementById('packCanvas'),cx=CV.getContext('2d');
 
 function tick(){const n=new Date();document.getElementById('clock').textContent=n.getHours().toString().padStart(2,'0')+':'+n.getMinutes().toString().padStart(2,'0')}
@@ -502,8 +540,8 @@ function draw(){
   if(S.img){
     cx.save();rr(CRX+IP,ITY,IW,IH,10);cx.clip();
     const iw=S.img.naturalWidth||S.img.width,ih=S.img.naturalHeight||S.img.height;
-    const sc=Math.min(IW/iw,IH/ih),dw=iw*sc,dh=ih*sc;
-    cx.drawImage(S.img,CRX+IP+(IW-dw)/2,ITY+(IH-dh)/2,dw,dh);cx.restore();
+    const base=Math.min(IW/iw,IH/ih),sc=base*S.imgScale,dw=iw*sc,dh=ih*sc;
+    cx.drawImage(S.img,CRX+IP+(IW-dw)/2+S.imgX,ITY+(IH-dh)/2+S.imgY,dw,dh);cx.restore();
   } else {
     /* empty state — soft dotted placeholder */
     cx.save();rr(CRX+IP,ITY,IW,IH,10);
@@ -602,7 +640,7 @@ const zone=document.getElementById('uploadZone'),ph=document.getElementById('upP
 function loadFile(f){
   if(!f||!f.type.startsWith('image/'))return;
   const r=new FileReader();
-  r.onload=e=>{const img=new Image();img.onload=()=>{S.img=img;thumb.src=e.target.result;thumb.classList.add('on');ph.style.display='none';zone.classList.add('has-img');draw()};img.src=e.target.result};
+  r.onload=e=>{const img=new Image();img.onload=()=>{S.img=img;S.imgX=0;S.imgY=0;S.imgScale=1;thumb.src=e.target.result;thumb.classList.add('on');ph.style.display='none';zone.classList.add('has-img');const sl=document.getElementById('zoomSlider');sl.value=100;updateSliderTrack(sl);draw()};img.src=e.target.result};
   r.readAsDataURL(f);
 }
 document.getElementById('fileInput').addEventListener('change',e=>loadFile(e.target.files[0]));
@@ -632,6 +670,68 @@ document.getElementById('dlBtn').addEventListener('click',()=>{
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+});
+
+/* ── IMAGE INTERACTION ── */
+const IPx=11;
+// geometry constants for hit test (must match draw())
+const _CUT_=162,_CRY_=184,_CRW_=350,_CRH_=272,_ITY_=_CRY_+IPx+34,_IW_=_CRW_-IPx*2,_IH_=_CRH_-IPx*2-34,_CRX_=48;
+
+function canvasPos(e){
+  const rect=CV.getBoundingClientRect();
+  const sx=CV.width/rect.width,sy=CV.height/rect.height;
+  const cx_=e.touches?e.touches[0].clientX:e.clientX;
+  const cy_=e.touches?e.touches[0].clientY:e.clientY;
+  return{x:(cx_-rect.left)*sx,y:(cy_-rect.top)*sy};
+}
+function inImgArea(x,y){return x>=_CRX_+IPx&&x<=_CRX_+IPx+_IW_&&y>=_ITY_&&y<=_ITY_+_IH_;}
+
+let _drag=false,_lx=0,_ly=0;
+
+CV.addEventListener('mousedown',e=>{
+  if(!S.img)return;
+  const p=canvasPos(e);
+  _drag=true;_lx=p.x;_ly=p.y;
+  CV.style.cursor='grabbing';
+});
+CV.addEventListener('mousemove',e=>{
+  if(!S.img)return;
+  const p=canvasPos(e);
+  if(!_drag){CV.style.cursor=inImgArea(p.x,p.y)?'grab':'default';return;}
+  S.imgX+=p.x-_lx;S.imgY+=p.y-_ly;_lx=p.x;_ly=p.y;draw();
+});
+CV.addEventListener('mouseup',()=>{_drag=false;CV.style.cursor='grab';});
+CV.addEventListener('mouseleave',()=>{_drag=false;CV.style.cursor='default';});
+
+CV.addEventListener('wheel',e=>{
+  if(!S.img)return;
+  e.preventDefault();
+  const d=e.deltaY>0?0.93:1.075;
+  S.imgScale=Math.max(0.1,Math.min(6,S.imgScale*d));
+  const sl=document.getElementById('zoomSlider');
+  sl.value=Math.round(S.imgScale*100);updateSliderTrack(sl);draw();
+},{passive:false});
+
+// Touch drag
+let _tl=null;
+CV.addEventListener('touchstart',e=>{if(!S.img||e.touches.length!==1)return;const p=canvasPos(e);_drag=true;_lx=p.x;_ly=p.y;_tl=e.touches[0].identifier;},{passive:true});
+CV.addEventListener('touchmove',e=>{
+  if(!_drag||!S.img)return;
+  e.preventDefault();
+  if(e.touches.length===1){const p=canvasPos(e);S.imgX+=p.x-_lx;S.imgY+=p.y-_ly;_lx=p.x;_ly=p.y;draw();}
+},{passive:false});
+CV.addEventListener('touchend',()=>{_drag=false;});
+
+// Zoom slider
+function updateSliderTrack(sl){const pct=((sl.value-sl.min)/(sl.max-sl.min)*100).toFixed(1)+'%';sl.style.setProperty('--pct',pct);}
+const zsl=document.getElementById('zoomSlider');
+updateSliderTrack(zsl);
+zsl.addEventListener('input',()=>{S.imgScale=zsl.value/100;updateSliderTrack(zsl);draw();});
+
+// Reset button
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  S.imgX=0;S.imgY=0;S.imgScale=1;
+  zsl.value=100;updateSliderTrack(zsl);draw();
 });
 
 document.fonts.ready.then(()=>draw());
