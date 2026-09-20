@@ -926,12 +926,22 @@ const progEl=document.getElementById('prog');
 function prog(p,t){progEl.classList.add('on');progEl.querySelector('i').style.width=Math.round(p*100)+'%';progEl.querySelector('b').textContent=t}
 function setBusy(b){busy=b;document.getElementById('pngBtn').disabled=b;document.getElementById('gifBtn').disabled=b}
 
+/* tight bounding box of the drawn package (ignores the faint outer shadow) */
+function contentBox(c,pad,thr=40){
+  const w=c.width,h=c.height,d=c.getContext('2d').getImageData(0,0,w,h).data;
+  let x0=w,y0=h,x1=-1,y1=-1;
+  for(let y=0;y<h;y++){const r=y*w*4;for(let x=0;x<w;x++)if(d[r+x*4+3]>thr){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;y1=y}}
+  if(x1<0)return{x:0,y:0,w,h};
+  x0=Math.max(0,x0-pad);y0=Math.max(0,y0-pad);x1=Math.min(w-1,x1+pad);y1=Math.min(h-1,y1+pad);
+  return{x:x0,y:y0,w:x1-x0+1,h:y1-y0+1};
+}
 async function savePNG(){
   if(busy)return;setBusy(true);
   try{
     await fontsReady();
     const k=2,c=mk(W0*k,H0*k);RENDER_EXACT=true;withCtx(c.getContext('2d'),k,()=>draw(fullState()));RENDER_EXACT=false;
-    let out=c;if(S.pngBg){out=mk(c.width,c.height);const o=out.getContext('2d');drawBg(o,out.width,out.height,k);o.drawImage(c,0,0)}
+    const bx=contentBox(c,10*k),out=mk(bx.w,bx.h),o=out.getContext('2d');
+    if(S.pngBg)drawBg(o,out.width,out.height,k);o.drawImage(c,-bx.x,-bx.y);
     download(await new Promise(r=>out.toBlob(r,'image/png')),'png');toast('PNG 저장 완료');
   }catch(e){console.error(e);toast('저장 실패')}
   finally{RENDER_EXACT=false;setBusy(false)}
@@ -945,15 +955,18 @@ async function saveGIF(){
     const times=[],delays=[];let hold=0;
     if(S.gifMode==='pack'){for(let t=0;t<=PACK_T+1e-6;t+=.06){times.push(t);delays.push(6)}hold=200}
     else{for(let t=0;t<LOOP_D-1e-6;t+=.08){times.push(t);delays.push(8)}}
-    const off=mk(W,H),og=off.getContext('2d'),comp=mk(W,H),cg=comp.getContext('2d',{willReadFrequently:true});
-    const render=t=>{RENDER_EXACT=true;withCtx(og,sc,()=>draw(gifStateAt(t)));RENDER_EXACT=false;drawBg(cg,W,H,sc);cg.drawImage(off,0,0);return cg.getImageData(0,0,W,H).data};
+    const off=mk(W,H),og=off.getContext('2d',{willReadFrequently:true});
+    RENDER_EXACT=true;withCtx(og,sc,()=>draw(fullState()));RENDER_EXACT=false;
+    const bx=contentBox(off,Math.round(10*sc)),GW=bx.w,GH=bx.h;
+    const comp=mk(GW,GH),cg=comp.getContext('2d',{willReadFrequently:true});
+    const render=t=>{RENDER_EXACT=true;withCtx(og,sc,()=>draw(gifStateAt(t)));RENDER_EXACT=false;drawBg(cg,GW,GH,sc);cg.drawImage(off,-bx.x,-bx.y);return cg.getImageData(0,0,GW,GH).data};
     const samp=[],NS=Math.min(8,times.length);
     for(let j=0;j<NS;j++){const d=render(times[Math.round(j*(times.length-1)/Math.max(1,NS-1))]);for(let p=(j*4)%52;p<d.length;p+=52)samp.push((d[p]<<16)|(d[p+1]<<8)|d[p+2]);prog(j/NS*.12,'PALETTE');await nap()}
-    const pal=medianCut(Uint32Array.from(samp),255),map=makeMapper(pal,W,H);
-    const chunks=[gifHeader(W,H,pal)];let prev=null,pend=null;
+    const pal=medianCut(Uint32Array.from(samp),255),map=makeMapper(pal,GW,GH);
+    const chunks=[gifHeader(GW,GH,pal)];let prev=null,pend=null;
     const flush=()=>{if(pend)chunks.push(...gifFrame(pend))};
     for(let i=0;i<times.length;i++){
-      const idx=map(render(times[i]));pend=diffFrame(idx,prev,W,H,delays[i],pend,flush);prev=idx;
+      const idx=map(render(times[i]));pend=diffFrame(idx,prev,GW,GH,delays[i],pend,flush);prev=idx;
       prog(.12+.86*(i+1)/times.length,`ENCODING ${i+1}/${times.length}`);await nap();
     }
     if(pend){pend.delay+=hold;flush()}
