@@ -709,14 +709,21 @@ function drawName(st){
   cx.restore();
 }
 
+function solidHeart(x,y,sz){ /* filled ❤︎ shape centred on x,y */
+  const k=sz/16;cx.save();cx.translate(x,y+.5);cx.scale(k,k);cx.beginPath();
+  cx.moveTo(0,6);cx.bezierCurveTo(-2,4,-8,1,-8,-3);cx.bezierCurveTo(-8,-6.5,-4.5,-8,-2.5,-7);cx.bezierCurveTo(-1.2,-6.4,-.4,-5.4,0,-4.4);
+  cx.bezierCurveTo(.4,-5.4,1.2,-6.4,2.5,-7);cx.bezierCurveTo(4.5,-8,8,-6.5,8,-3);cx.bezierCurveTo(8,1,2,4,0,6);cx.closePath();cx.fill();cx.restore();
+}
 function drawBadge(st){
   if(!S.badge||st.badgeS<=0||st.badgeA<=0)return;
   cx.save();cx.font='11px "Jua","Outfit",sans-serif';setLS('.5px');
-  const t='♡ '+S.badge,w=Math.max(84,cx.measureText(t).width+26);
+  const t=S.badge,HS=9,GAP=5,tw=cx.measureText(t).width,w=Math.max(84,tw+HS+GAP+26);
   cx.translate(CRX+14+w/2,CRY+24);cx.rotate(-.05);cx.scale(st.badgeS,st.badgeS);cx.globalAlpha*=st.badgeA;
   cx.save();shd(hex2rgba(S.ca,.3),6,2);rr(-w/2,-12,w,24,12);cx.fillStyle=ACCD;cx.fill();cx.restore();
   rr(-w/2+2.5,-9.5,w-5,19,9.5);cx.strokeStyle='rgba(255,255,255,.6)';cx.lineWidth=1;cx.setLineDash([2,2.5]);cx.stroke();cx.setLineDash([]);
-  cx.fillStyle='#fff';cx.textAlign='center';cx.textBaseline='middle';cx.fillText(t,0,1);
+  const hx=-(tw+HS+GAP)/2;
+  cx.fillStyle='#fff';solidHeart(hx+HS/2,1,HS);
+  cx.textAlign='left';cx.textBaseline='middle';cx.fillText(t,hx+HS+GAP,1);
   cx.restore();
 }
 
